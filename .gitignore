@@ -22,3 +22,6 @@ Thumbs.db
 *.pidb
 *.unityproj
 *.booproj
+
+# mine
+scripts

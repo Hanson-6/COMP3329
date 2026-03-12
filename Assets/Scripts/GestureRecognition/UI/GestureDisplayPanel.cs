@@ -78,7 +78,7 @@ namespace GestureRecognition.UI
 
         [Header("Display Settings")]
         [SerializeField]
-        private DisplayMode _displayMode = DisplayMode.CartoonSprite;
+        private DisplayMode _displayMode = DisplayMode.CameraFeed;
 
         [Tooltip("Reference to GestureConfig for sprite lookup. " +
                  "If null, will try to get from GestureService.")]
@@ -140,6 +140,9 @@ namespace GestureRecognition.UI
         private RectTransform _labelArea;
         private RectTransform _resizeHandle;
         private Button _closeButton;
+        private Button _modeButton;
+        private Text _modeButtonText;
+        private GestureOverlay _gestureOverlay;
 
         // -----------------------------------------------------------------
         // Public API
@@ -154,6 +157,16 @@ namespace GestureRecognition.UI
                 _displayMode = value;
                 UpdateDisplayMode();
             }
+        }
+
+        /// <summary>
+        /// Cycles to the next display mode in order:
+        /// CameraFeed → CartoonSprite → CameraWithOverlay → CameraFeed …
+        /// </summary>
+        public void CycleDisplayMode()
+        {
+            int count = System.Enum.GetValues(typeof(DisplayMode)).Length;
+            CurrentMode = (DisplayMode)(((int)_displayMode + 1) % count);
         }
 
         /// <summary>
@@ -256,6 +269,7 @@ namespace GestureRecognition.UI
                 _gestureConfig = GestureService.Instance.Config;
             }
 
+            // _displayMode = DisplayMode.CameraWithOverlay;
             UpdateDisplayMode();
         }
 
@@ -325,30 +339,69 @@ namespace GestureRecognition.UI
         // Display mode switching
         // -----------------------------------------------------------------
 
+        private static string ModeLabel(DisplayMode m) => m switch
+        {
+            DisplayMode.CameraFeed       => "CAM",
+            DisplayMode.CartoonSprite    => "SPR",
+            DisplayMode.CameraWithOverlay => "OVR",
+            _                            => "???"
+        };
+
         private void UpdateDisplayMode()
         {
+            if (_modeButtonText != null)
+                _modeButtonText.text = ModeLabel(_displayMode);
+
+            bool showCamera = _displayMode == DisplayMode.CameraFeed ||
+                _displayMode == DisplayMode.CameraWithOverlay;
+
+            if (_cameraImage != null)
+            {
+                _cameraImage.gameObject.SetActive(showCamera);
+            }
+
             switch (_displayMode)
             {
                 case DisplayMode.CameraFeed:
-                    if (_cameraImage != null) _cameraImage.gameObject.SetActive(true);
                     if (_gestureImage != null) _gestureImage.gameObject.SetActive(false);
+                    SetFullContentLayout();
+                    _gestureOverlay.gameObject.SetActive(showCamera);
                     break;
 
                 case DisplayMode.CartoonSprite:
-                    if (_cameraImage != null) _cameraImage.gameObject.SetActive(false);
                     if (_gestureImage != null) _gestureImage.gameObject.SetActive(true);
+                    SetFullContentLayout();
                     break;
 
                 case DisplayMode.CameraWithOverlay:
-                    if (_cameraImage != null) _cameraImage.gameObject.SetActive(true);
                     if (_gestureImage != null)
                     {
                         _gestureImage.gameObject.SetActive(true);
                         // In overlay mode, shrink the sprite to the corner
                         SetOverlayLayout();
+                        _gestureOverlay.gameObject.SetActive(showCamera);
                     }
                     break;
             }
+        }
+
+        private void UpdateLandmarkOverlayVisibility(bool showCamera)
+        {
+            if (_gestureOverlay == null)
+            {
+                return;
+            }
+        }
+
+        private void SetFullContentLayout()
+        {
+            if (_gestureImage == null) return;
+
+            RectTransform rt = _gestureImage.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
         private void SetOverlayLayout()
@@ -407,6 +460,31 @@ namespace GestureRecognition.UI
             titleText.color = Color.white;
             titleText.alignment = TextAnchor.MiddleLeft;
 
+            // Mode cycle button (to the left of the close button)
+            RectTransform modeBtnRt = CreateChild("ModeButton", _titleBar);
+            modeBtnRt.anchorMin = new Vector2(1, 0);
+            modeBtnRt.anchorMax = new Vector2(1, 1);
+            modeBtnRt.pivot = new Vector2(1, 0.5f);
+            modeBtnRt.anchoredPosition = new Vector2(-_titleBarHeight, 0);
+            modeBtnRt.sizeDelta = new Vector2(_titleBarHeight * 2f, 0);
+
+            Image modeBtnImg = modeBtnRt.gameObject.AddComponent<Image>();
+            modeBtnImg.color = new Color(0.2f, 0.4f, 0.7f, 0.8f);
+            _modeButton = modeBtnRt.gameObject.AddComponent<Button>();
+            _modeButton.targetGraphic = modeBtnImg;
+            _modeButton.onClick.AddListener(CycleDisplayMode);
+
+            RectTransform modeTextRt = CreateChild("ModeText", modeBtnRt);
+            modeTextRt.anchorMin = Vector2.zero;
+            modeTextRt.anchorMax = Vector2.one;
+            modeTextRt.offsetMin = Vector2.zero;
+            modeTextRt.offsetMax = Vector2.zero;
+            _modeButtonText = modeTextRt.gameObject.AddComponent<Text>();
+            _modeButtonText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _modeButtonText.fontSize = 11;
+            _modeButtonText.color = Color.white;
+            _modeButtonText.alignment = TextAnchor.MiddleCenter;
+
             // Close button
             RectTransform closeBtnRt = CreateChild("CloseButton", _titleBar);
             closeBtnRt.anchorMin = new Vector2(1, 0);
@@ -456,6 +534,17 @@ namespace GestureRecognition.UI
                 camRt.offsetMax = Vector2.zero;
                 _cameraImage = camRt.gameObject.AddComponent<RawImage>();
                 _cameraImage.color = Color.white;
+            }
+
+            if (_gestureOverlay == null)
+            {
+                RectTransform overlayRt = CreateChild("GestureOverlay", _contentArea);
+                overlayRt.anchorMin = Vector2.zero;
+                overlayRt.anchorMax = Vector2.one;
+                overlayRt.offsetMin = Vector2.zero;
+                overlayRt.offsetMax = Vector2.zero;
+                _gestureOverlay = overlayRt.gameObject.AddComponent<GestureOverlay>();
+                _gestureOverlay.gameObject.SetActive(false);
             }
 
             // Gesture sprite (Image) — fills the content area, preserves aspect
